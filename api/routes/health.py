@@ -74,10 +74,20 @@ async def health_check(db=Depends(get_db)):
         health_status["dependencies"]["vector_db"] = "unhealthy"
         health_status["status"] = "unhealthy"
 
-    # Count safety events in last hour (placeholder)
+    # Count safety events recorded by SafetyMonitor
     try:
-        # This would be populated by actual safety event logging
-        health_status["safety_events_last_hour"] = 0
+        # Separate client from the ping check above, which reads Settings
+        # attributes that don't exist (redis_host / redis_port)
+        import redis
+
+        from core.config import settings
+        from safety.monitoring import SafetyMonitor
+
+        safety_redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+        monitor = SafetyMonitor(safety_redis)
+        health_status["safety_events_last_hour"] = sum(
+            monitor.get_event_count(event_type) for event_type in SafetyMonitor.VALID_EVENT_TYPES
+        )
     except Exception as exc:
         log.error("safety_events_check_failed", error=str(exc))
 
